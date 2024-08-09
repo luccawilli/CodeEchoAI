@@ -1,25 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using AhabAI.SonarQube.Ollama.Fixer.Dto;
+﻿using AhabAI.SonarQube.Ollama.Fixer.Dto;
 using AhabAI.SonarQube.Ollama.Fixer.NewFolder;
 using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Text;
 
+namespace AhabAI.SonarQube.Ollama.Fixer {
 
-namespace AhabAI.SonarQube.Ollama.Fixer
-{
-
-    /// <summary>
-    /// AI to auto fix SonarQube issues using Ollama. => Ahab AI, searching for the white whale.
-    /// EchoCleaner would also be cool.
-    /// </summary>
-    public class Program {
+  /// <summary>
+  /// AI to auto fix SonarQube issues using Ollama. => Ahab AI, searching for the white whale.
+  /// EchoCleaner would also be cool.
+  /// </summary>
+  public class Program {
     private static readonly HashSet<string> ruleFilter = new HashSet<string>() {
       //"csharpsquid:S1481" // remove unused local variables
       "csharpsquid:S1643" // use stringbuilder
