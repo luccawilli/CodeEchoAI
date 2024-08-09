@@ -1,4 +1,4 @@
-﻿namespace CodeEcho.Dto {
+﻿namespace CodeEcho.SonarQube.Ollama.Fixer.Ollama {
   public class OllamaRequestBody {
 
     public string Prompt { get; set; }

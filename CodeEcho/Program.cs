@@ -1,7 +1,9 @@
-﻿using CodeEcho.Dto;
-using CodeEcho.NewFolder;
+﻿using CodeEcho.NewFolder;
+using CodeEcho.SonarQube.Ollama.Fixer;
+using CodeEcho.SonarQube.Ollama.Fixer.File;
+using CodeEcho.SonarQube.Ollama.Fixer.Ollama;
+using CodeEcho.SonarQube.Ollama.Fixer.Sonar;
 using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json.Linq;
 using System.Text;
 
 namespace CodeEcho {
@@ -11,8 +13,22 @@ namespace CodeEcho {
   /// </summary>
   public class Program {
     private static readonly HashSet<string> ruleFilter = new HashSet<string>() {
-      //"csharpsquid:S1481" // remove unused local variables
-      "csharpsquid:S1643" // use stringbuilder
+      //"csharpsquid:S1481", // remove unused local variables
+      //"csharpsquid:S1144", // remove unused private types
+      "csharpsquid:S1643", // use string builder
+      //"csharpsquid:S3265", // flagged enums should not use bitwise operations
+      //"csharpsquid:S2259", // possible null reference
+      //"csharpsquid:S1905", // redundant casts
+      //"csharpsquid:S1125", // redundant boolean literals
+      //"csharpsquid:S4487", // remove unused private fields
+      //"csharpsquid:S1155", // use Any() for empty check
+      //"csharpsquid:S1118", // add protected constructor or static keyword to helper class
+      //"csharpsquid:S3440", // remove useless condition
+      //"csharpsquid:S3442", // change visibility of constructor
+      //"csharpsquid:S1116", // remove empty statement
+      //"csharpsquid:S1939", // remove double defined implementation 
+      //"csharpsquid:S1450", // make field a local variable in the relevant method --> will need the full file?
+      //"csharpsquid:S1199", // extract code to method
     };
     private static readonly HashSet<string> projectFilter = new HashSet<string>() {
       "perigonRC"
@@ -30,42 +46,66 @@ namespace CodeEcho {
           .AddEnvironmentVariables()
           .Build();
 
-      string sonarQubeUrl = config["SonarQubeUrl"];
-      string sonarQubeToken = config["SonarQubeToken"];
-      string ollamaUrl = config["OllamaUrl"];
-      string sourcePath = config["SourceCodeRepositoryPath"];
+      var codeEchoSection = config.GetSection(nameof(CodeEchoConfig));
+      CodeEchoConfig? codeEchoConfig = codeEchoSection.Get<CodeEchoConfig>();
+      if (codeEchoConfig == null) {
+        Console.WriteLine($"Please supply an appsettings or env variables for {nameof(CodeEchoConfig)}");
+        return;
+      }
+      bool anyEmpty = string.IsNullOrWhiteSpace(codeEchoConfig.SonarQubeUrl)
+        || string.IsNullOrWhiteSpace(codeEchoConfig.SonarQubeToken)
+        || string.IsNullOrWhiteSpace(codeEchoConfig.OllamaUrl)
+        || string.IsNullOrWhiteSpace(codeEchoConfig.SourceCodeRepositoryPath);
+      if (anyEmpty) {
+        Console.WriteLine($"Please provide all properties with valid non empty values");
+        return;
+      }
 
-      SonarQubeClient sonarQubeClient = new SonarQubeClient(sonarQubeUrl, sonarQubeToken);
-      JObject issues = await sonarQubeClient.GetSonarIssues(projectFilter, ruleFilter);
-      List<JObject> simpleIssues = FilterSimpleIssues(issues);
-      List<JObject> onlyOneIssuePerFile = simpleIssues.GroupBy(x => x["project"]).Select(x => x.First()).ToList();
+      SonarQubeClient sonarQubeClient = new SonarQubeClient(
+        codeEchoConfig.SonarQubeUrl,
+        codeEchoConfig.SonarQubeToken
+      );
+      List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient);
 
-      await FixIssues(ollamaUrl, sourcePath, onlyOneIssuePerFile);
+      await FixIssues(codeEchoConfig.OllamaUrl, codeEchoConfig.SourceCodeRepositoryPath, onlyOneIssuePerFile);
     }
 
-    private static async Task FixIssues(string ollamaUrl, string sourcePath, List<JObject> onlyOneIssuePerFile) {
+    private static async Task<List<Issue>> GetFilteredIssues(SonarQubeClient sonarQubeClient) {
+      List<Issue> issues = await sonarQubeClient.GetSonarIssues(projectFilter, ruleFilter);
+      List<Issue> simpleIssues = FilterSimpleIssues(issues);
+      List<Issue> onlyOneIssuePerFile = simpleIssues
+        .GroupBy(x => x.Component)
+        .Select(x => x.First())
+        .ToList();
+      return onlyOneIssuePerFile;
+    }
+
+    private static async Task FixIssues(string ollamaUrl, string sourcePath, List<Issue> onlyOneIssuePerFile) {
       Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
       foreach (var issue in onlyOneIssuePerFile) {
-        Console.WriteLine($"Issue: {issue["key"]}, Message: {issue["message"]}");
+        Console.WriteLine($"Issue: {issue.Key}, Message: {issue.Message}");
         await GenerateFixWithOllama(ollamaUrl, sourcePath, issue);
       }
     }
 
-    private static List<JObject> FilterSimpleIssues(JObject issues) {
-      var simpleIssues = new List<JObject>();
-      foreach (var issue in issues["issues"]) {
-        bool containsRule = ruleFilter.Contains(issue["rule"].ToString());
-        bool containsProject = projectFilter.Contains(issue["project"].ToString());
+    private static List<Issue> FilterSimpleIssues(List<Issue> issues) {
+      if (issues == null) {
+        return new List<Issue>();
+      }
+      var simpleIssues = new List<Issue>();
+      foreach (var issue in issues) {
+        bool containsRule = ruleFilter.Contains(issue.Rule ?? "");
+        bool containsProject = projectFilter.Contains(issue.Project ?? "");
         if (containsProject && containsRule) {
-          simpleIssues.Add((JObject)issue);
+          simpleIssues.Add(issue);
         }
       }
       return simpleIssues;
     }
 
-    private static async Task GenerateFixWithOllama(string ollamaUrl, string sourcePath, JObject issue) {
-      string component = issue["component"].ToString();
-      string project = issue["project"].ToString();
+    private static async Task GenerateFixWithOllama(string ollamaUrl, string sourcePath, Issue issue) {
+      string component = issue.Component ?? "";
+      string project = issue.Project ?? "";
       string pathToFile = component.Remove(0, project.Length + 1);
       string filePath = Path.Combine(sourcePath, pathToFile);
       if (!File.Exists(filePath)) {
@@ -73,7 +113,7 @@ namespace CodeEcho {
         return;
       }
 
-      var textRange = issue["textRange"];
+      var textRange = issue.TextRange;
       if (textRange == null) {
         Console.WriteLine($"Issue is not in the source code: {filePath}");
         return;
@@ -85,7 +125,7 @@ namespace CodeEcho {
 
       const string startMarker = "xxxx";
       var prompt = $"The following C# code has an issue identified by SonarQube:\n\n" +
-                   $"Issue: {issue["message"]}\n" +
+                   $"Issue: {issue.Message}\n" +
                    $"Error:\n{exactErrorSpot}\n" +
                    $"Code Context:\n{contextWithLines.Context}\n" +
                    $"Please fix the code like a programmer would fix it. (Keep the context in mind)\n" +
@@ -108,7 +148,7 @@ namespace CodeEcho {
 
       Console.WriteLine($"Response looks good.");
 
-      string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim();
+      string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim().Replace("```", "");
       string newText = RebuildFile(fileLines, contextWithLines, fixedCodeContext);
       File.WriteAllText(filePath, newText, new UTF8Encoding(true));
 
