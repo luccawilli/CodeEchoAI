@@ -114,7 +114,7 @@ namespace CodeEcho {
 
       // todo: update usings
       // todo: dotnet format --files filePath
-      // dotnet format C:\Users\wlu\source\repos\AhabAI\AhabAI-SonarQube-Ollama-Fixer --include C:\Users\wlu\source\repos\AhabAI\AhabAI-SonarQube-Ollama-Fixer\SonarQubeClient.cs
+      // dotnet format C:\Users\wlu\source\repos\CodeEcho --include C:\Users\wlu\source\repos\CodeEcho\CodeEcho\SonarQubeClient.cs
 
       Console.WriteLine($"{filePath} updated");
     }
