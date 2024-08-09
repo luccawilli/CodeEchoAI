@@ -1,9 +1,9 @@
-﻿using AhabAI.SonarQube.Ollama.Fixer.Dto;
+﻿using CodeEcho.Dto;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Net.Http.Json;
 
-namespace AhabAI.SonarQube.Ollama.Fixer {
+namespace CodeEcho {
 
   /// <summary>Client to access Ollama.</summary>
   public class OllamaClient {

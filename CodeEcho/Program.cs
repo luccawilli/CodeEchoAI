@@ -1,10 +1,10 @@
-﻿using AhabAI.SonarQube.Ollama.Fixer.Dto;
-using AhabAI.SonarQube.Ollama.Fixer.NewFolder;
+﻿using CodeEcho.Dto;
+using CodeEcho.NewFolder;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json.Linq;
 using System.Text;
 
-namespace AhabAI.SonarQube.Ollama.Fixer {
+namespace CodeEcho {
 
   /// <summary>
   /// AI to auto fix SonarQube issues using Ollama. => Code Echo, the code is striking back

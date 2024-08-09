@@ -1,6 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
 
-namespace AhabAI.SonarQube.Ollama.Fixer {
+namespace CodeEcho {
 
   /// <summary>Client to access sonar qube.</summary>
   public class SonarQubeClient {

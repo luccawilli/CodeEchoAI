@@ -1,4 +1,4 @@
-﻿namespace AhabAI.SonarQube.Ollama.Fixer.Dto {
+﻿namespace CodeEcho.Dto {
   public class OllamaRequestBody {
 
     public string Prompt { get; set; }
