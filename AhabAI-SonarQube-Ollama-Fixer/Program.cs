@@ -113,6 +113,9 @@ namespace AhabAI.SonarQube.Ollama.Fixer {
       string newText = RebuildFile(fileLines, contextWithLines, fixedCodeContext);
       File.WriteAllText(filePath, newText, new UTF8Encoding(true));
 
+      // todo: update usings
+      // todo: dotnet format --files filePath
+
       Console.WriteLine($"{filePath} updated");
     }
 
