@@ -7,8 +7,7 @@ using System.Text;
 namespace AhabAI.SonarQube.Ollama.Fixer {
 
   /// <summary>
-  /// AI to auto fix SonarQube issues using Ollama. => Ahab AI, searching for the white whale.
-  /// EchoCleaner would also be cool.
+  /// AI to auto fix SonarQube issues using Ollama. => Code Echo, the code is striking back
   /// </summary>
   public class Program {
     private static readonly HashSet<string> ruleFilter = new HashSet<string>() {
@@ -115,6 +114,7 @@ namespace AhabAI.SonarQube.Ollama.Fixer {
 
       // todo: update usings
       // todo: dotnet format --files filePath
+      // dotnet format C:\Users\wlu\source\repos\AhabAI\AhabAI-SonarQube-Ollama-Fixer --include C:\Users\wlu\source\repos\AhabAI\AhabAI-SonarQube-Ollama-Fixer\SonarQubeClient.cs
 
       Console.WriteLine($"{filePath} updated");
     }
