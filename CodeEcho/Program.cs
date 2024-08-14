@@ -52,9 +52,36 @@ namespace CodeEcho {
 
       var codeEchoSection = config.GetSection(nameof(CodeEchoConfig));
       CodeEchoConfig? codeEchoConfig = codeEchoSection.Get<CodeEchoConfig>();
+      if (!ValidateConfig(codeEchoConfig)) {
+        return;
+      }
+
+      SonarQubeClient sonarQubeClient = new SonarQubeClient(
+        codeEchoConfig!.SonarQubeUrl,
+        codeEchoConfig.SonarQubeToken
+      );
+      List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient);
+
+      Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
+      foreach (var issue in onlyOneIssuePerFile) {
+        Console.WriteLine($"Issue: {issue.Key}, Message: {issue.Message}");
+        string sourcePath = codeEchoConfig.SourceCodeRepositoryPath;
+        string filePath = GetFilePath(sourcePath, issue);
+        if (!File.Exists(filePath)) {
+          Console.WriteLine($"File does not exists: {filePath}");
+          return;
+        }
+        await GenerateFixWithOllama(codeEchoConfig.OllamaUrl, filePath, issue);
+        FormatFile(sourcePath, filePath);
+
+        // todo git checkout + pull request --> dependency bot
+      }
+    }
+
+    private static bool ValidateConfig(CodeEchoConfig? codeEchoConfig) {
       if (codeEchoConfig == null) {
         Console.WriteLine($"Please supply an appsettings or env variables for {nameof(CodeEchoConfig)}");
-        return;
+        return false;
       }
       bool anyEmpty = string.IsNullOrWhiteSpace(codeEchoConfig.SonarQubeUrl)
         || string.IsNullOrWhiteSpace(codeEchoConfig.SonarQubeToken)
@@ -62,16 +89,9 @@ namespace CodeEcho {
         || string.IsNullOrWhiteSpace(codeEchoConfig.SourceCodeRepositoryPath);
       if (anyEmpty) {
         Console.WriteLine($"Please provide all properties with valid non empty values");
-        return;
+        return false;
       }
-
-      SonarQubeClient sonarQubeClient = new SonarQubeClient(
-        codeEchoConfig.SonarQubeUrl,
-        codeEchoConfig.SonarQubeToken
-      );
-      List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient);
-
-      await FixIssues(codeEchoConfig.OllamaUrl, codeEchoConfig.SourceCodeRepositoryPath, onlyOneIssuePerFile);
+      return true;
     }
 
     private static async Task<List<Issue>> GetFilteredIssues(SonarQubeClient sonarQubeClient) {
@@ -82,14 +102,6 @@ namespace CodeEcho {
         .Select(x => x.First())
         .ToList();
       return onlyOneIssuePerFile;
-    }
-
-    private static async Task FixIssues(string ollamaUrl, string sourcePath, List<Issue> onlyOneIssuePerFile) {
-      Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
-      foreach (var issue in onlyOneIssuePerFile) {
-        Console.WriteLine($"Issue: {issue.Key}, Message: {issue.Message}");
-        await GenerateFixWithOllama(ollamaUrl, sourcePath, issue);
-      }
     }
 
     private static List<Issue> FilterSimpleIssues(List<Issue> issues) {
@@ -107,16 +119,7 @@ namespace CodeEcho {
       return simpleIssues;
     }
 
-    private static async Task GenerateFixWithOllama(string ollamaUrl, string sourcePath, Issue issue) {
-      string component = issue.Component ?? "";
-      string project = issue.Project ?? "";
-      string pathToFile = component.Remove(0, project.Length + 1);
-      string filePath = Path.Combine(sourcePath, pathToFile);
-      if (!File.Exists(filePath)) {
-        Console.WriteLine($"File does not exists: {filePath}");
-        return;
-      }
-
+    private static async Task GenerateFixWithOllama(string ollamaUrl, string filePath, Issue issue) {
       var textRange = issue.TextRange;
       if (textRange == null) {
         Console.WriteLine($"Issue is not in the source code: {filePath}");
@@ -161,12 +164,15 @@ namespace CodeEcho {
       string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim().Replace("```csharp", "").Replace("```", "");
       string newText = RebuildFile(fileLines, contextWithLines, fixedCodeContext);
       File.WriteAllText(filePath, newText, new UTF8Encoding(true));
+      Console.WriteLine($"Added AI advice to {filePath}");
+    }
 
-      // todo git checkout + pull request
-      // --> dependency bot
-      FormatFile(sourcePath, filePath);
-
-      Console.WriteLine($"{filePath} updated");
+    private static string GetFilePath(string sourcePath, Issue issue) {
+      string component = issue.Component ?? "";
+      string project = issue.Project ?? "";
+      string pathToFile = component.Remove(0, project.Length + 1);
+      string filePath = Path.Combine(sourcePath, pathToFile);
+      return filePath;
     }
 
     private static string RebuildFile(string[] fileLines, ErrorContext contextWithLines, string fixedCodeContext) {
@@ -209,7 +215,8 @@ namespace CodeEcho {
       catch (Exception ex) {
         Console.WriteLine($"An error occurred: {ex.Message}");
       }
-      //Process.Start("cmd", $"dotnet-format {sourcePath} --files {file}");
+
+      Console.WriteLine($"File formatted {file}");
     }
 
   }
