@@ -16,7 +16,11 @@ namespace CodeEcho.SonarQube.Ollama.Fixer.File {
       int endOffset = issueLocation.EndOffset;
 
       if (startLine == endLine) {
-        return fileLines[startLine - 1].Substring(startOffset, endOffset - startOffset);
+        string r = fileLines[Math.Max(startLine - 1, 0)];
+        if (string.IsNullOrWhiteSpace(r)) {
+          return r;
+        }
+        return r.Substring(startOffset, endOffset - startOffset);
       }
 
       var errorLines = new List<string>();
@@ -37,9 +41,14 @@ namespace CodeEcho.SonarQube.Ollama.Fixer.File {
       int startContextLine = issueLocation.StartLine;
       int endContextLine = issueLocation.EndLine;
 
+      FixRange(fileLines, ref startContextLine, ref endContextLine);
       FilterForMethods(fileLines, ref startContextLine, ref endContextLine);
       FixRange(fileLines, ref startContextLine, ref endContextLine);
-      FilterForCommentsAndAttributes(fileLines, ref startContextLine, ref endContextLine);
+      //FilterForCommentsAndAttributes(fileLines, ref startContextLine, ref endContextLine);
+      startContextLine--;
+      startContextLine--;
+      endContextLine++;
+      endContextLine++;
       FixRange(fileLines, ref startContextLine, ref endContextLine);
 
       string context = string.Join(Environment.NewLine, fileLines.Skip(startContextLine).Take(Math.Max(endContextLine - startContextLine, 1)));

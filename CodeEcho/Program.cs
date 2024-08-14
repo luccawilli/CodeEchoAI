@@ -4,6 +4,7 @@ using CodeEcho.SonarQube.Ollama.Fixer.File;
 using CodeEcho.SonarQube.Ollama.Fixer.Ollama;
 using CodeEcho.SonarQube.Ollama.Fixer.Sonar;
 using Microsoft.Extensions.Configuration;
+using System.Diagnostics;
 using System.Text;
 
 namespace CodeEcho {
@@ -15,20 +16,20 @@ namespace CodeEcho {
     private static readonly HashSet<string> ruleFilter = new HashSet<string>() {
       //"csharpsquid:S1481", // remove unused local variables
       //"csharpsquid:S1144", // remove unused private types
-      "csharpsquid:S1643", // use string builder
+      //x"csharpsquid:S1643", // use string builder
       //"csharpsquid:S3265", // flagged enums should not use bitwise operations
-      //"csharpsquid:S2259", // possible null reference
-      //"csharpsquid:S1905", // redundant casts
-      //"csharpsquid:S1125", // redundant boolean literals
+      //x"csharpsquid:S2259", // possible null reference
+      "csharpsquid:S1905", // redundant casts
+      //x"csharpsquid:S1125", // redundant boolean literals
       //"csharpsquid:S4487", // remove unused private fields
-      //"csharpsquid:S1155", // use Any() for empty check
+      "csharpsquid:S1155", // use Any() for empty check
       //"csharpsquid:S1118", // add protected constructor or static keyword to helper class
-      //"csharpsquid:S3440", // remove useless condition
-      //"csharpsquid:S3442", // change visibility of constructor
+      //x"csharpsquid:S3440", // remove useless condition
+      //x"csharpsquid:S3442", // change visibility of constructor
       //"csharpsquid:S1116", // remove empty statement
-      //"csharpsquid:S1939", // remove double defined implementation 
+      //x"csharpsquid:S1939", // remove double defined implementation 
       //"csharpsquid:S1450", // make field a local variable in the relevant method --> will need the full file?
-      //"csharpsquid:S1199", // extract code to method
+      //x"csharpsquid:S1199", // extract code to method
     };
     private static readonly HashSet<string> projectFilter = new HashSet<string>() {
       "perigonRC"
@@ -38,6 +39,9 @@ namespace CodeEcho {
     // 1. Start Docker
     // 2. Run Ollama: docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
     // 4. Pull llama3 model: docker exec -it ollama /bin/bash -c "ollama pull llama3"
+
+    // How to format:
+    // 1. Install dotnet-format: dotnet tool install -g dotnet-format
 
     static async Task Main(string[] args) {
       var config = new ConfigurationBuilder()
@@ -121,7 +125,13 @@ namespace CodeEcho {
       string allText = File.ReadAllText(filePath, new UTF8Encoding(true));
       string[] fileLines = allText.Split(Environment.NewLine);
       var exactErrorSpot = FileAnalyzer.GetExactErrorSpot(fileLines, textRange);
-      var contextWithLines = FileAnalyzer.GetErrorContext(fileLines, textRange);
+      //var contextWithLines = FileAnalyzer.GetErrorContext(fileLines, textRange);
+      var contextWithLines = RoslynFileAnalyzer.GetErrorContext(allText, fileLines, textRange);
+
+      if (string.IsNullOrWhiteSpace(exactErrorSpot) && string.IsNullOrWhiteSpace(contextWithLines.Context)) {
+        Console.WriteLine($"No context");
+        return;
+      }
 
       const string startMarker = "xxxx";
       var prompt = $"The following C# code has an issue identified by SonarQube:\n\n" +
@@ -148,13 +158,13 @@ namespace CodeEcho {
 
       Console.WriteLine($"Response looks good.");
 
-      string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim().Replace("```", "");
+      string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim().Replace("```csharp", "").Replace("```", "");
       string newText = RebuildFile(fileLines, contextWithLines, fixedCodeContext);
       File.WriteAllText(filePath, newText, new UTF8Encoding(true));
 
-      // todo: update usings
-      // todo: dotnet format --files filePath
-      // dotnet format C:\Users\wlu\source\repos\CodeEcho --include C:\Users\wlu\source\repos\CodeEcho\CodeEcho\SonarQubeClient.cs
+      // todo git checkout + pull request
+      // --> dependency bot
+      FormatFile(sourcePath, filePath);
 
       Console.WriteLine($"{filePath} updated");
     }
@@ -166,5 +176,41 @@ namespace CodeEcho {
       string newText = string.Join(Environment.NewLine, newContent);
       return newText;
     }
+
+    private static void FormatFile(string sourcePath, string file) {
+      string arguments = $"--folder \"{sourcePath}\" --include \"{file.Replace(sourcePath,"").Replace("\\", "")}\"";
+      var processInfo = new ProcessStartInfo {
+        FileName = "dotnet-format",
+        Arguments = arguments,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+      }; 
+      try {
+        using (var process = Process.Start(processInfo)) {
+          // Capture the output and errors
+          string output = process.StandardOutput.ReadToEnd();
+          string errors = process.StandardError.ReadToEnd();
+
+          process.WaitForExit();
+
+          // Print the output (or handle it as needed)
+          Console.WriteLine("Output:");
+          Console.WriteLine(output);
+
+          // Print the errors (or handle it as needed)
+          if (!string.IsNullOrWhiteSpace(errors)) {
+            Console.WriteLine("Errors:");
+            Console.WriteLine(errors);
+          }
+        }
+      }
+      catch (Exception ex) {
+        Console.WriteLine($"An error occurred: {ex.Message}");
+      }
+      //Process.Start("cmd", $"dotnet-format {sourcePath} --files {file}");
+    }
+
   }
 }
