@@ -13,28 +13,6 @@ namespace CodeEcho {
   /// AI to auto fix SonarQube issues using Ollama. => Code Echo, the code is striking back
   /// </summary>
   public class Program {
-    private static readonly HashSet<string> ruleFilter = new HashSet<string>() {
-      //"csharpsquid:S1481", // remove unused local variables
-      //"csharpsquid:S1144", // remove unused private types
-      //x"csharpsquid:S1643", // use string builder
-      //"csharpsquid:S3265", // flagged enums should not use bitwise operations
-      //x"csharpsquid:S2259", // possible null reference
-      "csharpsquid:S1905", // redundant casts
-      //x"csharpsquid:S1125", // redundant boolean literals
-      //"csharpsquid:S4487", // remove unused private fields
-      "csharpsquid:S1155", // use Any() for empty check
-      //"csharpsquid:S1118", // add protected constructor or static keyword to helper class
-      //x"csharpsquid:S3440", // remove useless condition
-      //x"csharpsquid:S3442", // change visibility of constructor
-      //"csharpsquid:S1116", // remove empty statement
-      //x"csharpsquid:S1939", // remove double defined implementation 
-      //"csharpsquid:S1450", // make field a local variable in the relevant method --> will need the full file?
-      //x"csharpsquid:S1199", // extract code to method
-    };
-    private static readonly HashSet<string> projectFilter = new HashSet<string>() {
-      "perigonRC"
-    };
-
     // How to run Ollama:
     // 1. Start Docker
     // 2. Run Ollama: docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
@@ -60,7 +38,9 @@ namespace CodeEcho {
         codeEchoConfig!.SonarQubeUrl,
         codeEchoConfig.SonarQubeToken
       );
-      List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient);
+      HashSet<string> projectFilter = codeEchoConfig.ProjectFilter.ToHashSet();
+      HashSet<string> ruleFilter = codeEchoConfig.RuleFilter.ToHashSet();
+      List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient, projectFilter, ruleFilter);
 
       Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
       foreach (var issue in onlyOneIssuePerFile) {
@@ -91,12 +71,17 @@ namespace CodeEcho {
         Console.WriteLine($"Please provide all properties with valid non empty values");
         return false;
       }
+      bool listEmpty = codeEchoConfig.ProjectFilter.Count == 0 || codeEchoConfig.RuleFilter.Count == 0;
+      if (listEmpty) {
+        Console.WriteLine($"Please provide at least one project and rule filter");
+        return false;
+      }
       return true;
     }
 
-    private static async Task<List<Issue>> GetFilteredIssues(SonarQubeClient sonarQubeClient) {
+    private static async Task<List<Issue>> GetFilteredIssues(SonarQubeClient sonarQubeClient, HashSet<string> projectFilter, HashSet<string> ruleFilter) {
       List<Issue> issues = await sonarQubeClient.GetSonarIssues(projectFilter, ruleFilter);
-      List<Issue> simpleIssues = FilterSimpleIssues(issues);
+      List<Issue> simpleIssues = FilterSimpleIssues(issues, projectFilter, ruleFilter);
       List<Issue> onlyOneIssuePerFile = simpleIssues
         .GroupBy(x => x.Component)
         .Select(x => x.First())
@@ -104,7 +89,7 @@ namespace CodeEcho {
       return onlyOneIssuePerFile;
     }
 
-    private static List<Issue> FilterSimpleIssues(List<Issue> issues) {
+    private static List<Issue> FilterSimpleIssues(List<Issue> issues, HashSet<string> projectFilter, HashSet<string> ruleFilter) {
       if (issues == null) {
         return new List<Issue>();
       }
