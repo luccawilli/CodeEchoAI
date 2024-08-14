@@ -13,13 +13,6 @@ namespace CodeEcho {
   /// AI to auto fix SonarQube issues using Ollama. => Code Echo, the code is striking back
   /// </summary>
   public class Program {
-    // How to run Ollama:
-    // 1. Start Docker
-    // 2. Run Ollama: docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
-    // 4. Pull llama3 model: docker exec -it ollama /bin/bash -c "ollama pull llama3"
-
-    // How to format:
-    // 1. Install dotnet-format: dotnet tool install -g dotnet-format
 
     static async Task Main(string[] args) {
       var config = new ConfigurationBuilder()
@@ -34,12 +27,12 @@ namespace CodeEcho {
         return;
       }
 
-      SonarQubeClient sonarQubeClient = new SonarQubeClient(
+      SonarQubeClient sonarQubeClient = new(
         codeEchoConfig!.SonarQubeUrl,
         codeEchoConfig.SonarQubeToken
       );
-      HashSet<string> projectFilter = codeEchoConfig.ProjectFilter.ToHashSet();
-      HashSet<string> ruleFilter = codeEchoConfig.RuleFilter.ToHashSet();
+      HashSet<string> projectFilter = [.. codeEchoConfig.ProjectFilter];
+      HashSet<string> ruleFilter = [.. codeEchoConfig.RuleFilter];
       List<Issue> onlyOneIssuePerFile = await GetFilteredIssues(sonarQubeClient, projectFilter, ruleFilter);
 
       Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
@@ -51,13 +44,14 @@ namespace CodeEcho {
           Console.WriteLine($"File does not exists: {filePath}");
           return;
         }
-        await GenerateFixWithOllama(codeEchoConfig.OllamaUrl, filePath, issue);
+        await GenerateFix(codeEchoConfig.OllamaUrl, filePath, issue);
         FormatFile(sourcePath, filePath);
 
         // todo git checkout + pull request --> dependency bot
       }
     }
 
+    /// <summary>Validate the config values.</summary>
     private static bool ValidateConfig(CodeEchoConfig? codeEchoConfig) {
       if (codeEchoConfig == null) {
         Console.WriteLine($"Please supply an appsettings or env variables for {nameof(CodeEchoConfig)}");
@@ -104,7 +98,7 @@ namespace CodeEcho {
       return simpleIssues;
     }
 
-    private static async Task GenerateFixWithOllama(string ollamaUrl, string filePath, Issue issue) {
+    private static async Task GenerateFix(string ollamaUrl, string filePath, Issue issue) {
       var textRange = issue.TextRange;
       if (textRange == null) {
         Console.WriteLine($"Issue is not in the source code: {filePath}");
@@ -130,13 +124,13 @@ namespace CodeEcho {
                    $"Do not change formatting and do not fix other issues.\n" +
                    $"Always start the answer with {startMarker}, than write down the fixed code with context, no explanations.\n";
 
-      OllamaRequestBody ollamaRequestBody = new OllamaRequestBody() {
+      OllamaRequestBody ollamaRequestBody = new() {
         Model = "llama3",
         Prompt = prompt,
         IsStream = false
       };
 
-      OllamaClient ollamaClient = new OllamaClient(ollamaUrl);
+      OllamaClient ollamaClient = new(ollamaUrl);
       string contentResult = await ollamaClient.GetResponse(ollamaRequestBody);
 
       if (!contentResult.StartsWith(startMarker)) {
@@ -180,6 +174,10 @@ namespace CodeEcho {
       }; 
       try {
         using (var process = Process.Start(processInfo)) {
+          if (process == null) {
+           Console.WriteLine("Process not started");
+            return;
+          }
           // Capture the output and errors
           string output = process.StandardOutput.ReadToEnd();
           string errors = process.StandardError.ReadToEnd();
