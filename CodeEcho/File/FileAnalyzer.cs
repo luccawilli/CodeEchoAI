@@ -20,7 +20,7 @@ namespace CodeEcho.SonarQube.Ollama.Fixer.File {
         if (string.IsNullOrWhiteSpace(r)) {
           return r;
         }
-        return r.Substring(startOffset, endOffset - startOffset);
+        return r?.Substring(startOffset, endOffset - startOffset) ?? "";
       }
 
       var errorLines = new List<string>();

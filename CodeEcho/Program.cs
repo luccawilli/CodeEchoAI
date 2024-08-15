@@ -37,15 +37,20 @@ namespace CodeEcho {
 
       Console.WriteLine($"Found {onlyOneIssuePerFile.Count} simple issues to address.");
       foreach (var issue in onlyOneIssuePerFile) {
-        Console.WriteLine($"Issue: {issue.Key}, Message: {issue.Message}");
-        string sourcePath = codeEchoConfig.SourceCodeRepositoryPath;
-        string filePath = GetFilePath(sourcePath, issue);
-        if (!File.Exists(filePath)) {
-          Console.WriteLine($"File does not exists: {filePath}");
-          return;
+        try {
+          Console.WriteLine($"Issue: {issue.Key}, Message: {issue.Message}");
+          string sourcePath = codeEchoConfig.SourceCodeRepositoryPath;
+          string filePath = GetFilePath(sourcePath, issue);
+          if (!File.Exists(filePath)) {
+            Console.WriteLine($"File does not exists: {filePath}");
+            return;
+          }
+          await GenerateFix(codeEchoConfig.OllamaUrl, filePath, issue);
+          FormatFile(sourcePath, filePath);
         }
-        await GenerateFix(codeEchoConfig.OllamaUrl, filePath, issue);
-        FormatFile(sourcePath, filePath);
+        catch (Exception ex) {
+          Console.WriteLine($"Exception throw for Issue: {issue.Key} - {ex.Message} - {ex.InnerException?.Message}");
+        }
 
         // todo git checkout + pull request --> dependency bot
       }
@@ -107,7 +112,6 @@ namespace CodeEcho {
       string allText = File.ReadAllText(filePath, new UTF8Encoding(true));
       string[] fileLines = allText.Split(Environment.NewLine);
       var exactErrorSpot = FileAnalyzer.GetExactErrorSpot(fileLines, textRange);
-      //var contextWithLines = FileAnalyzer.GetErrorContext(fileLines, textRange);
       var contextWithLines = RoslynFileAnalyzer.GetErrorContext(allText, fileLines, textRange);
 
       if (string.IsNullOrWhiteSpace(exactErrorSpot) && string.IsNullOrWhiteSpace(contextWithLines.Context)) {
@@ -133,17 +137,35 @@ namespace CodeEcho {
       OllamaClient ollamaClient = new(ollamaUrl);
       string contentResult = await ollamaClient.GetResponse(ollamaRequestBody);
 
-      if (!contentResult.StartsWith(startMarker)) {
-        Console.WriteLine($"No start marker in the response, probably bad response.");
+      bool validResponse = ValidateResponse(contentResult, contextWithLines, startMarker);
+      if (!validResponse) {
         return;
       }
-
-      Console.WriteLine($"Response looks good.");
 
       string fixedCodeContext = contentResult.Substring(startMarker.Length).Trim().Replace("```csharp", "").Replace("```", "");
       string newText = RebuildFile(fileLines, contextWithLines, fixedCodeContext);
       File.WriteAllText(filePath, newText, new UTF8Encoding(true));
       Console.WriteLine($"Added AI advice to {filePath}");
+    }
+
+    private static bool ValidateResponse(string contentResult, ErrorContext contextWithLines, string startMarker) {
+      if (string.IsNullOrWhiteSpace(contentResult)) {
+        Console.WriteLine("No response from Ollama");
+        return false;
+      }
+      if (!contentResult.StartsWith(startMarker)) {
+        Console.WriteLine($"No start marker in the response, probably bad response.");
+        return false;
+      }
+      var contentResultLines = contentResult?.Split(Environment.NewLine).ToList() ?? new List<string>();
+      var contextLines = contextWithLines.Context?.Split(Environment.NewLine).ToList() ?? new List<string>();
+      if (contentResultLines.Count + 5 < contextLines.Count) {
+        Console.WriteLine($"To many changes, probably bad response.");
+        return false;
+      }
+
+      Console.WriteLine($"Response looks good.");
+      return true;
     }
 
     private static string GetFilePath(string sourcePath, Issue issue) {
