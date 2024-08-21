@@ -159,7 +159,7 @@ namespace CodeEcho {
       }
       var contentResultLines = contentResult?.Split(Environment.NewLine).ToList() ?? new List<string>();
       var contextLines = contextWithLines.Context?.Split(Environment.NewLine).ToList() ?? new List<string>();
-      if (contentResultLines.Count + 5 < contextLines.Count) {
+      if (contentResultLines.Count > contextLines.Count + 5) {
         Console.WriteLine($"To many changes, probably bad response.");
         return false;
       }
